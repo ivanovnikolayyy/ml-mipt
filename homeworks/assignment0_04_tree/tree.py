@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.base import BaseEstimator
 
 
-def entropy(y):  
+def entropy(y):
     """
     Computes entropy of the provided distribution. Use log(value + eps) for numerical stability
     
@@ -16,12 +16,17 @@ def entropy(y):
     float
         Entropy of the provided subset
     """
+    
+    if y.shape[0] == 0:
+        return 0.0
+
     EPS = 0.0005
 
-    # YOUR CODE HERE
-    
-    return 0.
-    
+    p = np.mean(y, axis=0)
+
+    return -(p * np.log2(p + EPS)).sum()
+
+
 def gini(y):
     """
     Computes the Gini impurity of the provided distribution
@@ -36,11 +41,15 @@ def gini(y):
     float
         Gini impurity of the provided subset
     """
+    
+    if y.shape[0] == 0:
+        return 0.0
 
-    # YOUR CODE HERE
-    
-    return 0.
-    
+    p = np.mean(y, axis=0)
+
+    return 1 - (p ** 2).sum()
+
+
 def variance(y):
     """
     Computes the variance the provided target values subset
@@ -55,10 +64,9 @@ def variance(y):
     float
         Variance of the provided target vector
     """
-    
-    # YOUR CODE HERE
-    
-    return 0.
+
+    return ((y - y.mean()) ** 2).mean()
+
 
 def mad_median(y):
     """
@@ -76,9 +84,7 @@ def mad_median(y):
         Mean absolute deviation from the median in the provided vector
     """
 
-    # YOUR CODE HERE
-    
-    return 0.
+    return np.abs(y - np.median(y)).mean()
 
 
 def one_hot_encode(n_classes, y):
@@ -95,38 +101,38 @@ class Node:
     """
     This class is provided "as is" and it is not mandatory to it use in your code.
     """
+
     def __init__(self, feature_index, threshold, proba=0):
         self.feature_index = feature_index
         self.value = threshold
         self.proba = proba
         self.left_child = None
         self.right_child = None
-        
-        
+
+
 class DecisionTree(BaseEstimator):
     all_criterions = {
-        'gini': (gini, True), # (criterion, classification flag)
+        'gini': (gini, True),  # (criterion, classification flag)
         'entropy': (entropy, True),
         'variance': (variance, False),
         'mad_median': (mad_median, False)
     }
 
-    def __init__(self, n_classes=None, max_depth=np.inf, min_samples_split=2, 
+    def __init__(self, n_classes=None, max_depth=np.inf, min_samples_split=2,
                  criterion_name='gini', debug=False):
 
-        assert criterion_name in self.all_criterions.keys(), 'Criterion name must be on of the following: {}'.format(self.all_criterions.keys())
-        
+        assert criterion_name in self.all_criterions.keys(), 'Criterion name must be on of the following: {}'.format(
+            self.all_criterions.keys())
+
         self.n_classes = n_classes
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.criterion_name = criterion_name
 
         self.depth = 0
-        self.root = None # Use the Node class to initialize it later
+        self.root = None  # Use the Node class to initialize it later
         self.debug = debug
 
-        
-        
     def make_split(self, feature_index, threshold, X_subset, y_subset):
         """
         Makes split of the provided data subset and target values using provided feature and threshold
@@ -154,10 +160,12 @@ class DecisionTree(BaseEstimator):
             Part of the providev subset where selected feature x^j >= threshold
         """
 
-        # YOUR CODE HERE
-        
+        mask_left = X_subset[:, feature_index] < threshold
+        X_left, y_left = X_subset[mask_left], y_subset[mask_left]
+        X_right, y_right = X_subset[~mask_left], y_subset[~mask_left]
+
         return (X_left, y_left), (X_right, y_right)
-    
+
     def make_split_only_y(self, feature_index, threshold, X_subset, y_subset):
         """
         Split only target values into two subsets with specified feature and threshold
@@ -188,8 +196,9 @@ class DecisionTree(BaseEstimator):
             Part of the provided subset where selected feature x^j >= threshold
         """
 
-        # YOUR CODE HERE
-        
+        mask_left = X_subset[:, feature_index] < threshold
+        y_left, y_right = y_subset[mask_left], y_subset[~mask_left]
+
         return y_left, y_right
 
     def choose_best_split(self, X_subset, y_subset):
@@ -214,9 +223,24 @@ class DecisionTree(BaseEstimator):
             Threshold value to perform split
 
         """
-        # YOUR CODE HERE
-        return feature_index, threshold
-    
+
+        best_split_criterion_value = np.inf
+
+        for feature_index in range(X_subset.shape[-1]):
+            for threshold in np.percentile(X_subset[:, feature_index], np.arange(0, 100, 5)):
+                (X_left, y_left), (X_right, y_right) = self.make_split(feature_index, threshold, X_subset, y_subset)
+                criterion_value = X_left.shape[0] * self.criterion(y_left) + X_right.shape[0] * self.criterion(y_right)
+
+                if criterion_value < best_split_criterion_value:
+                    best_split_criterion_value = criterion_value
+                    best_feature_index = feature_index
+                    best_threshold = threshold
+
+                if best_split_criterion_value == 0:
+                    return best_feature_index, best_threshold
+
+        return best_feature_index, best_threshold
+
     def make_tree(self, X_subset, y_subset):
         """
         Recursively builds the tree
@@ -236,10 +260,22 @@ class DecisionTree(BaseEstimator):
             Node of the root of the fitted tree
         """
 
-        # YOUR CODE HERE
-        
-        return new_node
-        
+        def _make_tree(X_subset, y_subset, min_samples_split, max_depth, current_depth):           
+            if X_subset.shape[0] < self.min_samples_split or current_depth > self.max_depth:
+                return
+
+            proba = y_subset.mean(axis=0)
+            feature_index, threshold = self.choose_best_split(X_subset, y_subset)
+            (X_left, y_left), (X_right, y_right) = self.make_split(feature_index, threshold, X_subset, y_subset)
+
+            new_node = Node(feature_index, threshold, proba)
+            new_node.left_child = _make_tree(X_left, y_left, min_samples_split, max_depth, current_depth + 1)
+            new_node.right_child = _make_tree(X_right, y_right, min_samples_split, max_depth, current_depth + 1)
+
+            return new_node
+
+        return _make_tree(X_subset, y_subset, self.min_samples_split, self.max_depth, 0)
+
     def fit(self, X, y):
         """
         Fit the model from scratch using the provided data
@@ -262,28 +298,7 @@ class DecisionTree(BaseEstimator):
             y = one_hot_encode(self.n_classes, y)
 
         self.root = self.make_tree(X, y)
-    
-    def predict(self, X):
-        """
-        Predict the target value or class label  the model from scratch using the provided data
-        
-        Parameters
-        ----------
-        X : np.array of type float with shape (n_objects, n_features)
-            Feature matrix representing the data the predictions should be provided for
 
-        Returns
-        -------
-        y_predicted : np.array of type int with shape (n_objects, 1) in classification 
-                   (n_objects, 1) in regression 
-            Column vector of class labels in classification or target values in regression
-        
-        """
-
-        # YOUR CODE HERE
-        
-        return y_predicted
-        
     def predict_proba(self, X):
         """
         Only for classification
@@ -302,6 +317,43 @@ class DecisionTree(BaseEstimator):
         """
         assert self.classification, 'Available only for classification problem'
 
-        # YOUR CODE HERE
-        
+        y_predicted_probs = []
+
+        for x in X:
+            current_node = self.root
+            prev_node = current_node
+
+            while current_node:
+                prev_node = current_node
+                if x[current_node.feature_index] < current_node.value:
+                    current_node = current_node.left_child
+                else:
+                    current_node = current_node.right_child
+
+            y_predicted_probs.append(prev_node.proba)
+
+        y_predicted_probs = np.array(y_predicted_probs)
+
         return y_predicted_probs
+
+    def predict(self, X):
+        """
+        Predict the target value or class label  the model from scratch using the provided data
+        
+        Parameters
+        ----------
+        X : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the data the predictions should be provided for
+
+        Returns
+        -------
+        y_predicted : np.array of type int with shape (n_objects, 1) in classification 
+                   (n_objects, 1) in regression 
+            Column vector of class labels in classification or target values in regression
+        
+        """
+
+        y_predicted_probs = self.predict_proba(X)
+        y_predicted = np.argmax(y_predicted_probs, axis=1)
+
+        return y_predicted
